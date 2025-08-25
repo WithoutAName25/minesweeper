@@ -123,7 +123,7 @@ impl Field {
         }
     }
 
-    fn init_message(self: &Self) -> ServerMessage {
+    fn init_message(&self) -> ServerMessage {
         ServerMessage::Init {
             width: self.width,
             height: self.height,
@@ -139,11 +139,11 @@ impl Field {
         }
     }
 
-    fn has_won(self: &Self) -> bool {
+    fn has_won(&self) -> bool {
         self.width * self.height == self.bombs + self.revealed
     }
 
-    fn reveal_bombs(self: &mut Self, updates: &mut Vec<CellUpdate>) {
+    fn reveal_bombs(&mut self, updates: &mut Vec<CellUpdate>) {
         for y in 0..self.height {
             for x in 0..self.width {
                 let pos = Pos { x, y };
@@ -161,7 +161,7 @@ impl Field {
         }
     }
 
-    fn reveal_recursive(self: &mut Self, pos: Pos, updates: &mut Vec<CellUpdate>) {
+    fn reveal_recursive(&mut self, pos: Pos, updates: &mut Vec<CellUpdate>) {
         if !self.validate_pos(&pos) {
             return;
         }
@@ -200,7 +200,7 @@ impl Field {
         }
     }
 
-    fn validate_pos(self: &Self, pos: &Pos) -> bool {
+    fn validate_pos(&self, pos: &Pos) -> bool {
         pos.x < self.width && pos.y < self.height
     }
 }
@@ -213,23 +213,23 @@ impl Game {
         }
     }
 
-    pub async fn restart(self: &mut Self, params: GameParams) {
+    pub async fn restart(&mut self, params: GameParams) {
         self.field = Field::new(params);
         broadcast(&mut self.connections, &self.field.init_message()).await;
     }
 
-    pub async fn add_stream(self: &mut Self, mut stream: SplitSink<DuplexStream, Message>) -> Uuid {
+    pub async fn add_stream(&mut self, mut stream: SplitSink<DuplexStream, Message>) -> Uuid {
         let id = Uuid::new_v4();
         send(&mut stream, &self.field.init_message()).await;
         self.connections.insert(id, stream);
         id
     }
 
-    pub async fn remove_stream(self: &mut Self, id: &Uuid) {
+    pub async fn remove_stream(&mut self, id: &Uuid) {
         self.connections.remove(id);
     }
 
-    pub async fn flag(self: &mut Self, pos: Pos) {
+    pub async fn flag(&mut self, pos: Pos) {
         if !self.field.validate_pos(&pos) || self.field.finished {
             return;
         }
@@ -256,7 +256,7 @@ impl Game {
         };
     }
 
-    pub async fn reveal(self: &mut Self, pos: Pos) {
+    pub async fn reveal(&mut self, pos: Pos) {
         if !self.field.validate_pos(&pos) || self.field.finished {
             return;
         }
