@@ -148,14 +148,14 @@ impl Field {
             for x in 0..self.width {
                 let pos = Pos { x, y };
 
-                if let Some(cell) = self.cells.get_mut(pos.x + pos.y * self.width) {
-                    if cell.bomb {
-                        cell.revealed = RevealedState::Revealed;
-                        updates.push(CellUpdate {
-                            pos,
-                            value: (&*cell).into(),
-                        });
-                    }
+                if let Some(cell) = self.cells.get_mut(pos.x + pos.y * self.width)
+                    && cell.bomb
+                {
+                    cell.revealed = RevealedState::Revealed;
+                    updates.push(CellUpdate {
+                        pos,
+                        value: (&*cell).into(),
+                    });
                 }
             }
         }
