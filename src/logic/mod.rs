@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub type Games = DashMap<String, Arc<Mutex<Game>>>;
+pub type Games = Arc<DashMap<String, Arc<Mutex<Game>>>>;
 
 pub struct Game {
     field: Field,
@@ -238,15 +238,15 @@ impl Game {
         !self.streams.is_empty()
     }
 
-    pub fn should_cleanup(&self, inactive_timeout_secs: u64, active_timeout_secs: u64) -> bool {
+    pub fn should_cleanup(&self, inactive_timeout_secs: u64) -> bool {
+        if self.has_active_connections() {
+            return false;
+        }
+
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_activity).as_secs();
 
-        if self.has_active_connections() {
-            elapsed > active_timeout_secs
-        } else {
-            elapsed > inactive_timeout_secs
-        }
+        elapsed > inactive_timeout_secs
     }
 
     pub async fn flag(&mut self, pos: Pos) {

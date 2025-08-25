@@ -16,25 +16,20 @@ pub async fn start_cleanup_task(games: Games) {
         .parse()
         .unwrap_or(600);
 
-    let active_timeout_secs: u64 = env::var("ACTIVE_GAME_TIMEOUT_SECONDS")
-        .unwrap_or_else(|_| "86400".to_string())
-        .parse()
-        .unwrap_or(86400);
-
     let mut interval = time::interval(Duration::from_secs(cleanup_interval_secs));
 
     info!(
-        "Started game cleanup task: checking every {}s, inactive timeout: {}s, active timeout: {}s",
-        cleanup_interval_secs, inactive_timeout_secs, active_timeout_secs
+        "Started game cleanup task: checking every {}s, inactive timeout: {}s",
+        cleanup_interval_secs, inactive_timeout_secs
     );
 
     loop {
         interval.tick().await;
-        cleanup_games(&games, inactive_timeout_secs, active_timeout_secs).await;
+        cleanup_games(&games, inactive_timeout_secs).await;
     }
 }
 
-async fn cleanup_games(games: &Games, inactive_timeout_secs: u64, active_timeout_secs: u64) {
+async fn cleanup_games(games: &Games, inactive_timeout_secs: u64) {
     let mut games_to_remove = Vec::new();
 
     // First pass: identify games to remove
@@ -44,7 +39,7 @@ async fn cleanup_games(games: &Games, inactive_timeout_secs: u64, active_timeout
 
         // Try to lock the game, skip if we can't (probably in use)
         if let Ok(game_guard) = game.try_lock()
-            && game_guard.should_cleanup(inactive_timeout_secs, active_timeout_secs)
+            && game_guard.should_cleanup(inactive_timeout_secs)
         {
             games_to_remove.push(game_id.clone());
         }
