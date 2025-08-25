@@ -5,7 +5,7 @@ on:
 env:
   IMAGE: withoutaname/minesweeper-server
 jobs:
-  test-server:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -22,24 +22,18 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            Server/target
+            target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Check formatting
-        run: |
-          cd Server
-          cargo fmt -- --check
+        run: cargo fmt -- --check
       - name: Run clippy
-        run: |
-          cd Server
-          cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings
       - name: Run tests
-        run: |
-          cd Server
-          cargo test
-  build-server:
-    needs: test-server
+        run: cargo test
+  build:
+    needs: test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
@@ -61,7 +55,7 @@ jobs:
             type=raw,value=commit-{{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}
             type=semver,pattern=v{{version}}
             type=raw,value=latest,enable={{is_default_branch}}
-      - name: Build and push Server Docker image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           platforms: linux/amd64
