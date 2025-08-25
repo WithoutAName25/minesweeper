@@ -25,7 +25,7 @@ RUN useradd -r -s /bin/false -m -d /app appuser
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/minesweeper_server ./app
+COPY --from=builder /app/target/release/minesweeper-server ./app
 
 RUN chown -R appuser:appuser /app
 USER appuser
