@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use dashmap::DashMap;
 use rand::Rng;
@@ -19,7 +19,8 @@ pub type Games = DashMap<String, Arc<Mutex<Game>>>;
 
 pub struct Game {
     field: Field,
-    connections: HashMap<Uuid, SplitSink<DuplexStream, Message>>,
+    streams: HashMap<Uuid, SplitSink<DuplexStream, Message>>,
+    last_activity: Instant,
 }
 
 fn generate_bombs(params: &GameParams) -> Vec<bool> {
@@ -209,30 +210,51 @@ impl Game {
     pub fn new(params: GameParams) -> Self {
         Self {
             field: Field::new(params),
-            connections: HashMap::new(),
+            streams: HashMap::new(),
+            last_activity: Instant::now(),
         }
     }
 
     pub async fn restart(&mut self, params: GameParams) {
         self.field = Field::new(params);
-        broadcast(&mut self.connections, &self.field.init_message()).await;
+        self.last_activity = Instant::now();
+        broadcast(&mut self.streams, &self.field.init_message()).await;
     }
 
     pub async fn add_stream(&mut self, mut stream: SplitSink<DuplexStream, Message>) -> Uuid {
         let id = Uuid::new_v4();
         send(&mut stream, &self.field.init_message()).await;
-        self.connections.insert(id, stream);
+        self.streams.insert(id, stream);
+        self.last_activity = Instant::now();
         id
     }
 
     pub async fn remove_stream(&mut self, id: &Uuid) {
-        self.connections.remove(id);
+        self.streams.remove(id);
+        self.last_activity = Instant::now()
+    }
+
+    pub fn has_active_connections(&self) -> bool {
+        !self.streams.is_empty()
+    }
+
+    pub fn should_cleanup(&self, inactive_timeout_secs: u64, active_timeout_secs: u64) -> bool {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_activity).as_secs();
+
+        if self.has_active_connections() {
+            elapsed > active_timeout_secs
+        } else {
+            elapsed > inactive_timeout_secs
+        }
     }
 
     pub async fn flag(&mut self, pos: Pos) {
         if !self.field.validate_pos(&pos) || self.field.finished {
             return;
         }
+
+        self.last_activity = Instant::now();
 
         if let Some(cell) = self.field.cells.get_mut(pos.x + pos.y * self.field.width) {
             match cell.revealed {
@@ -242,7 +264,7 @@ impl Game {
                 RevealedState::Revealed => return,
             };
             broadcast(
-                &mut self.connections,
+                &mut self.streams,
                 &ServerMessage::Update {
                     updates: vec![CellUpdate {
                         pos,
@@ -261,6 +283,8 @@ impl Game {
             return;
         }
 
+        self.last_activity = Instant::now();
+
         if let Some(cell) = self.field.cells.get_mut(pos.x + pos.y * self.field.width) {
             if cell.revealed == RevealedState::Flagged {
                 return;
@@ -271,7 +295,7 @@ impl Game {
                 self.field.reveal_bombs(&mut updates);
                 self.field.finished = true;
                 broadcast(
-                    &mut self.connections,
+                    &mut self.streams,
                     &ServerMessage::Update {
                         updates,
                         won: false,
@@ -287,7 +311,7 @@ impl Game {
             let won = self.field.has_won();
             self.field.finished = won;
             broadcast(
-                &mut self.connections,
+                &mut self.streams,
                 &ServerMessage::Update {
                     updates,
                     won,

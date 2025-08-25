@@ -24,13 +24,14 @@ This is a **multiplayer minesweeper server** built with Rust using the Rocket we
 
 ### Core Components
 
-- **main.rs**: Application entry point, sets up Rocket server with CORS, rate limiting, and routes
+- **main.rs**: Application entry point, sets up Rocket server with CORS, rate limiting, cleanup task, and routes
 - **routes/mod.rs**: HTTP endpoints (`/create` for game creation) and WebSocket handler (`/ws`)
-- **logic/mod.rs**: Game logic including bomb generation, cell revealing, and game state management
+- **logic/mod.rs**: Game logic including bomb generation, cell revealing, game state management, and activity tracking
 - **data/mod.rs**: Internal data structures (`Cell`, `Field`, `RevealedState`)
 - **model/**: API data models for client-server communication
 - **cors.rs**: CORS configuration with environment variable support
 - **rate_limit.rs**: Rate limiting using token bucket algorithm per client IP
+- **cleanup.rs**: Background task for automatic game cleanup based on activity timeouts
 
 ### Game Flow
 
@@ -47,10 +48,18 @@ This is a **multiplayer minesweeper server** built with Rust using the Rocket we
 - **Response**: Returns HTTP 429 (Too Many Requests) when limit exceeded
 - **IP Detection**: Uses `X-Forwarded-For`, `X-Real-IP` headers or connection IP
 
+### Game Cleanup
+
+- **Automatic Cleanup**: Background task runs every 60 seconds by default
+- **Two Timeout Types**:
+  - **Inactive Games**: Games with no WebSocket connections are cleaned up after 5 minutes
+  - **Active Games**: Games with connections but no activity are cleaned up after 1 hour
+- **Activity Tracking**: Last activity updated on game actions (reveal, flag, restart, connection events)
+
 ### Key Data Structures
 
 - **Games**: `DashMap<String, Arc<Mutex<Game>>>` - Thread-safe game storage
-- **Game**: Contains `Field` and WebSocket connections (`HashMap<Uuid, SplitSink>`)
+- **Game**: Contains `Field`, WebSocket connections (`HashMap<Uuid, SplitSink>`), and activity timestamps
 - **Field**: Game state with cells, dimensions, bomb count, and completion status
 - **Cell**: Internal cell with bomb flag, adjacent count, and revealed state
 
@@ -65,6 +74,9 @@ This is a **multiplayer minesweeper server** built with Rust using the Rocket we
 
 - **CORS_ALLOWED_ORIGINS**: Comma-separated list of allowed origins (default: `http://localhost:5173`)
 - **RATE_LIMIT_GAMES_PER_MINUTE**: Games per minute per IP address (default: `10`)
+- **CLEANUP_INTERVAL_SECONDS**: How often to run cleanup task (default: `60`)
+- **INACTIVE_GAME_TIMEOUT_SECONDS**: Timeout for games with no active connections (default: `300` - 5 minutes)
+- **ACTIVE_GAME_TIMEOUT_SECONDS**: Timeout for games with active connections but no activity (default: `3600` - 1 hour)
 - **RUST_LOG**: Logging level (default: `info` in Docker)
 - **ROCKET_ENV**: Environment (`prod` in Docker)
 - **ROCKET_ADDRESS**: Bind address (`0.0.0.0` in Docker)
