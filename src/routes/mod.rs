@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use crate::{
     logic::{Game, Games},
     model::{GameParams, api::CreateResponse, client::ClientMessage},
+    rate_limit::{ClientIp, RateLimiter, check_rate_limit},
 };
 
 fn add_game(games: &State<Games>, game: Game) -> String {
@@ -32,10 +33,17 @@ fn add_game(games: &State<Games>, game: Game) -> String {
 }
 
 #[post("/create", data = "<params>")]
-pub fn create_game(params: Json<GameParams>, games: &State<Games>) -> Json<CreateResponse> {
+pub fn create_game(
+    params: Json<GameParams>,
+    games: &State<Games>,
+    rate_limiter: &State<RateLimiter>,
+    client_ip: ClientIp,
+) -> Result<Json<CreateResponse>, Status> {
+    check_rate_limit(rate_limiter, &client_ip)?;
+
     let game = Game::new(params.0);
     let id = add_game(games, game);
-    Json(CreateResponse { id })
+    Ok(Json(CreateResponse { id }))
 }
 
 #[get("/ws?<id>")]
