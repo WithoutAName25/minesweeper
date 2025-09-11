@@ -5,15 +5,15 @@ use rand::Rng;
 use rocket::futures::{SinkExt, future::join_all, stream::SplitSink};
 use rocket_ws::{Message, stream::DuplexStream};
 use tokio::sync::Mutex;
+use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
-use crate::{
-    data::{Cell, Field, RevealedState},
-    model::{
-        self, GameParams, Pos,
-        server::{CellUpdate, ServerMessage},
-    },
+use minesweeper_common::{
+    models::{GameParams, Pos},
+    protocol::{CellUpdate, ServerMessage},
 };
+
+use crate::data::{Cell, Field, RevealedState};
 
 pub type Games = Arc<DashMap<String, Arc<Mutex<Game>>>>;
 
@@ -81,7 +81,7 @@ fn generate_cells(params: &GameParams) -> Vec<Cell> {
     cells.collect()
 }
 
-impl From<&Cell> for model::Cell {
+impl From<&Cell> for minesweeper_common::models::Cell {
     fn from(value: &Cell) -> Self {
         match value.revealed {
             RevealedState::Hidden => Self::Hidden,
@@ -133,7 +133,7 @@ impl Field {
                 .cells
                 .iter()
                 .map(|cell| cell.into())
-                .collect::<Vec<model::Cell>>()
+                .collect::<Vec<minesweeper_common::models::Cell>>()
                 .chunks(self.width)
                 .map(|chunk| chunk.to_vec())
                 .collect(),
@@ -207,7 +207,12 @@ impl Field {
 }
 
 impl Game {
+    #[instrument(level = "trace")]
     pub fn new(params: GameParams) -> Self {
+        info!(
+            "Creating new game: {}x{} with {} bombs",
+            params.width, params.height, params.bombs
+        );
         Self {
             field: Field::new(params),
             streams: HashMap::new(),
@@ -215,22 +220,47 @@ impl Game {
         }
     }
 
+    #[instrument(level = "trace", skip(self))]
     pub async fn restart(&mut self, params: GameParams) {
+        info!(
+            "Restarting game with new parameters: {}x{} with {} bombs",
+            params.width, params.height, params.bombs
+        );
         self.field = Field::new(params);
         self.last_activity = Instant::now();
         broadcast(&mut self.streams, &self.field.init_message()).await;
+        info!(
+            "Game restarted and broadcasted to {} connections",
+            self.streams.len()
+        );
     }
 
+    #[instrument(level = "trace", skip(self, stream))]
     pub async fn add_stream(&mut self, mut stream: SplitSink<DuplexStream, Message>) -> Uuid {
         let id = Uuid::new_v4();
+        debug!("Adding stream {} to game", id);
         send(&mut stream, &self.field.init_message()).await;
         self.streams.insert(id, stream);
         self.last_activity = Instant::now();
+        info!(
+            "Stream {} added, total connections: {}",
+            id,
+            self.streams.len()
+        );
         id
     }
 
+    #[instrument(level = "trace", skip(self))]
     pub async fn remove_stream(&mut self, id: &Uuid) {
-        self.streams.remove(id);
+        if self.streams.remove(id).is_some() {
+            info!(
+                "Stream {} removed, remaining connections: {}",
+                id,
+                self.streams.len()
+            );
+        } else {
+            warn!("Attempted to remove non-existent stream: {}", id);
+        }
         self.last_activity = Instant::now()
     }
 
@@ -249,37 +279,76 @@ impl Game {
         elapsed > inactive_timeout_secs
     }
 
+    #[instrument(level = "trace", skip(self), fields(x = pos.x, y = pos.y))]
     pub async fn flag(&mut self, pos: Pos) {
-        if !self.field.validate_pos(&pos) || self.field.finished {
+        if !self.field.validate_pos(&pos) {
+            warn!("Invalid flag position: ({}, {})", pos.x, pos.y);
+            return;
+        }
+
+        if self.field.finished {
+            debug!(
+                "Ignoring flag action on finished game at ({}, {})",
+                pos.x, pos.y
+            );
             return;
         }
 
         self.last_activity = Instant::now();
 
         if let Some(cell) = self.field.cells.get_mut(pos.x + pos.y * self.field.width) {
+            let old_state = cell.revealed;
             match cell.revealed {
-                RevealedState::Hidden => cell.revealed = RevealedState::Flagged,
-                RevealedState::Marked => cell.revealed = RevealedState::Hidden,
-                RevealedState::Flagged => cell.revealed = RevealedState::Marked,
-                RevealedState::Revealed => return,
+                RevealedState::Hidden => {
+                    cell.revealed = RevealedState::Flagged;
+                    debug!("Cell ({}, {}) flagged", pos.x, pos.y);
+                }
+                RevealedState::Marked => {
+                    cell.revealed = RevealedState::Hidden;
+                    debug!("Cell ({}, {}) unmarked", pos.x, pos.y);
+                }
+                RevealedState::Flagged => {
+                    cell.revealed = RevealedState::Marked;
+                    debug!("Cell ({}, {}) marked", pos.x, pos.y);
+                }
+                RevealedState::Revealed => {
+                    debug!(
+                        "Ignoring flag action on revealed cell ({}, {})",
+                        pos.x, pos.y
+                    );
+                    return;
+                }
             };
-            broadcast(
-                &mut self.streams,
-                &ServerMessage::Update {
-                    updates: vec![CellUpdate {
-                        pos,
-                        value: (&*cell).into(),
-                    }],
-                    won: false,
-                    lost: false,
-                },
-            )
-            .await;
+
+            if old_state != cell.revealed {
+                broadcast(
+                    &mut self.streams,
+                    &ServerMessage::Update {
+                        updates: vec![CellUpdate {
+                            pos,
+                            value: (&*cell).into(),
+                        }],
+                        won: false,
+                        lost: false,
+                    },
+                )
+                .await;
+            }
         };
     }
 
+    #[instrument(level = "trace", skip(self), fields(x = pos.x, y = pos.y))]
     pub async fn reveal(&mut self, pos: Pos) {
-        if !self.field.validate_pos(&pos) || self.field.finished {
+        if !self.field.validate_pos(&pos) {
+            warn!("Invalid reveal position: ({}, {})", pos.x, pos.y);
+            return;
+        }
+
+        if self.field.finished {
+            debug!(
+                "Ignoring reveal action on finished game at ({}, {})",
+                pos.x, pos.y
+            );
             return;
         }
 
@@ -287,13 +356,16 @@ impl Game {
 
         if let Some(cell) = self.field.cells.get_mut(pos.x + pos.y * self.field.width) {
             if cell.revealed == RevealedState::Flagged {
+                debug!("Ignoring reveal on flagged cell ({}, {})", pos.x, pos.y);
                 return;
             }
 
             if cell.bomb {
+                warn!("Player hit bomb at ({}, {}) - game over!", pos.x, pos.y);
                 let mut updates = Vec::new();
                 self.field.reveal_bombs(&mut updates);
                 self.field.finished = true;
+                info!("Game ended with loss, revealed {} bombs", updates.len());
                 broadcast(
                     &mut self.streams,
                     &ServerMessage::Update {
@@ -306,10 +378,21 @@ impl Game {
                 return;
             }
 
+            debug!(
+                "Revealing cell ({}, {}) with {} adjacent bombs",
+                pos.x, pos.y, cell.adjacent
+            );
             let mut updates = Vec::new();
             self.field.reveal_recursive(pos, &mut updates);
             let won = self.field.has_won();
             self.field.finished = won;
+
+            if won {
+                info!("Game won! All safe cells revealed.");
+            } else {
+                debug!("Revealed {} cells, game continues", updates.len());
+            }
+
             broadcast(
                 &mut self.streams,
                 &ServerMessage::Update {

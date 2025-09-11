@@ -2,21 +2,29 @@ FROM rust:latest AS builder
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 
-# Create a dummy main.rs to build dependencies
-RUN mkdir -p src/ && echo "fn main() {}" > src/main.rs
+# Copy crate manifests for dependency caching
+COPY common/Cargo.toml common/
+COPY server/Cargo.toml server/
+COPY client/Cargo.toml client/
+
+# Create dummy source files for dependency caching
+RUN mkdir -p common/src && echo "fn main() {}" > common/src/lib.rs
+RUN mkdir -p server/src && echo "fn main() {}" > server/src/main.rs
+RUN mkdir -p client/src && echo "fn main() {}" > client/src/lib.rs
 
 # Build dependencies (this will be cached)
-RUN cargo build --release
-RUN rm -r src/*
+RUN cargo build --release --bin minesweeper-server
+RUN rm -rf common/src server/src client/src
 
-# Copy source code
-COPY src src
+# Copy actual source code
+COPY common/src common/src
+COPY server/src server/src
+COPY client/src client/src
 
-# Build the application
-# Touch main.rs to ensure it's rebuilt
-RUN touch src/main.rs && cargo build --release
+# Build the server binary
+RUN touch server/src/main.rs && cargo build --release --bin minesweeper-server
 
 # Runtime stage
 FROM debian:bookworm-slim

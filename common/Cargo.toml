@@ -1,0 +1,8 @@
+[package]
+name = "minesweeper-common"
+version = "0.1.0"
+edition = "2024"
+description = "Shared types and protocol definitions for minesweeper client/server"
+
+[dependencies]
+serde = { workspace = true }

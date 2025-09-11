@@ -20,18 +20,24 @@ cargo test
 
 ## Architecture Overview
 
-This is a **multiplayer minesweeper server** built with Rust using the Rocket web framework. The server provides real-time multiplayer minesweeper games through WebSocket connections.
+This is a **multiplayer minesweeper server and client** built with Rust using the Rocket web framework for the server and tokio-tungstenite for WebSocket client functionality. The server provides real-time multiplayer minesweeper games through WebSocket connections, and includes a comprehensive Rust client library.
 
-### Core Components
+### Server Components
 
-- **main.rs**: Application entry point, sets up Rocket server with CORS, rate limiting, cleanup task, and routes
-- **routes/mod.rs**: HTTP endpoints (`/create` for game creation) and WebSocket handler (`/ws`)
-- **logic/mod.rs**: Game logic including bomb generation, cell revealing, game state management, and activity tracking
-- **data/mod.rs**: Internal data structures (`Cell`, `Field`, `RevealedState`)
-- **model/**: API data models for client-server communication
-- **cors.rs**: CORS configuration with environment variable support
-- **rate_limit.rs**: Rate limiting using token bucket algorithm per client IP
-- **cleanup.rs**: Background task for automatic game cleanup based on activity timeouts
+- **server/main.rs**: Application entry point, sets up Rocket server with CORS, rate limiting, cleanup task, and routes
+- **server/routes/mod.rs**: HTTP endpoints (`/create` for game creation) and WebSocket handler (`/ws`)
+- **server/logic/mod.rs**: Game logic including bomb generation, cell revealing, game state management, and activity tracking
+- **server/data/mod.rs**: Internal data structures (`Cell`, `Field`, `RevealedState`)
+- **server/cors.rs**: CORS configuration with environment variable support
+- **server/rate_limit.rs**: Rate limiting using token bucket algorithm per client IP
+- **server/cleanup.rs**: Background task for automatic game cleanup based on activity timeouts
+
+### Client Components
+
+- **client/client.rs**: HTTP client for game creation and management
+- **client/websocket.rs**: Thread-safe WebSocket client with MPSC channel pattern for concurrent read/write operations
+- **client/game.rs**: High-level game client with background message listening, event emission, and local state management
+- **common/**: Shared data models and protocol definitions used by both client and server
 
 ### Game Flow
 
@@ -40,6 +46,53 @@ This is a **multiplayer minesweeper server** built with Rust using the Rocket we
 3. **Game State**: Server broadcasts `ServerMessage::Init` on connection with full field state
 4. **Player Actions**: Clients send `ClientMessage` (Reveal, Flag, Restart)
 5. **State Updates**: Server broadcasts `ServerMessage::Update` with cell changes and win/loss status
+
+### Client Usage
+
+The client library provides both high-level and low-level interfaces:
+
+#### High-Level Interface (Recommended)
+```rust
+use minesweeper_client::{GameEvent, GameParams, MinesweeperGame};
+
+let mut game = MinesweeperGame::new("http://localhost:8000")?;
+
+// Subscribe to real-time events
+let mut events = game.subscribe_to_events();
+tokio::spawn(async move {
+    while let Some(event) = events.recv().await {
+        match event {
+            GameEvent::BoardUpdated { changed_positions } => { /* handle updates */ }
+            GameEvent::GameStatusChanged { won, lost } => { /* handle win/loss */ }
+            // ... other events
+        }
+    }
+});
+
+// Start game with optional parameters (defaults to 9x9 with 10 bombs)
+let params = GameParams::new(); // or GameParams { width: 16, height: 16, bombs: 40 }
+game.start_game(params).await?;
+
+// Make moves (non-blocking)
+game.reveal(0, 0).await?;
+game.flag(1, 1).await?;
+
+// Get current state
+if let Some(state) = game.get_state().await {
+    println!("Game over: {}", state.is_game_over());
+}
+```
+
+#### Low-Level Interface
+```rust
+use minesweeper_client::{MinesweeperClient, MinesweeperWebSocket, ClientMessage};
+
+let client = MinesweeperClient::new("http://localhost:8000")?;
+let game_id = client.create_game(GameParams::new()).await?;
+
+let mut ws = MinesweeperWebSocket::connect(&client.websocket_url(&game_id)?).await?;
+ws.send_message(ClientMessage::Reveal { pos: Pos { x: 0, y: 0 } }).await?;
+```
 
 ### Rate Limiting
 
@@ -82,13 +135,45 @@ This is a **multiplayer minesweeper server** built with Rust using the Rocket we
 - **ROCKET_ADDRESS**: Bind address (`0.0.0.0` in Docker)
 - **ROCKET_PORT**: Port number (`8000` in Docker)
 
+### Client Architecture Features
+
+- **Thread-Safe WebSocket**: Uses MPSC channel pattern to prevent read/write deadlocks
+- **Background Message Processing**: Automatic WebSocket message handling in background tasks
+- **Event-Driven Updates**: Real-time field change notifications with exact position data
+- **Optional Game Parameters**: Server-side defaults (9x9 with 10 bombs) with serde support
+- **Concurrent Operations**: Non-blocking game actions (reveal, flag, restart) while listening for updates
+- **Automatic State Management**: Local game state synchronization with server
+
+### Key Data Structures
+
+#### Server
+- **Games**: `DashMap<String, Arc<Mutex<Game>>>` - Thread-safe game storage
+- **Game**: Contains `Field`, WebSocket connections (`HashMap<Uuid, SplitSink>`), and activity timestamps
+- **Field**: Game state with cells, dimensions, bomb count, and completion status
+- **Cell**: Internal cell with bomb flag, adjacent count, and revealed state
+
+#### Client
+- **GameEvent**: Enum for real-time events (BoardUpdated, GameStatusChanged, GameInitialized, ConnectionLost)
+- **GameState**: Local representation of the game board with utility methods
+- **MinesweeperGame**: High-level client with event subscription and background processing
+- **MinesweeperWebSocket**: Thread-safe WebSocket wrapper with internal MPSC channel
+
 ### Dependencies
 
+#### Server
 - **Rocket**: Web framework with WebSocket support (`rocket_ws`)
 - **DashMap**: Concurrent hash map for game storage
 - **Tokio**: Async runtime
 - **Serde**: JSON serialization
 - **UUID/NanoID**: Unique identifiers
+- **Tracing**: Structured logging
+
+#### Client
+- **tokio-tungstenite**: WebSocket client implementation
+- **reqwest**: HTTP client for REST API calls
+- **futures-util**: Stream/Sink utilities for WebSocket handling
+- **Tokio**: Async runtime and synchronization primitives
+- **Serde**: JSON serialization
 - **Tracing**: Structured logging
 
 ### Testing & CI

@@ -10,6 +10,7 @@ use rocket::{
     http::Status,
     request::{self, FromRequest, Request},
 };
+use tracing::{debug, instrument, warn};
 
 #[derive(Debug)]
 pub struct TokenBucket {
@@ -22,6 +23,12 @@ pub struct TokenBucket {
 
 impl TokenBucket {
     fn new(capacity: u32, refill_rate: u32, refill_interval: Duration) -> Self {
+        debug!(
+            "Creating new token bucket: capacity={}, refill_rate={}, interval={}s",
+            capacity,
+            refill_rate,
+            refill_interval.as_secs()
+        );
         Self {
             last_refill: Instant::now(),
             tokens: capacity,
@@ -35,8 +42,10 @@ impl TokenBucket {
         self.refill();
         if self.tokens > 0 {
             self.tokens -= 1;
+            debug!("Token consumed, remaining: {}", self.tokens);
             true
         } else {
+            debug!("No tokens available for consumption");
             false
         }
     }
@@ -47,9 +56,16 @@ impl TokenBucket {
         let intervals = elapsed.as_secs() / self.refill_interval.as_secs();
 
         if intervals > 0 {
+            let old_tokens = self.tokens;
             let tokens_to_add = (intervals as u32) * self.refill_rate;
             self.tokens = (self.tokens + tokens_to_add).min(self.capacity);
             self.last_refill = now;
+            if self.tokens != old_tokens {
+                debug!(
+                    "Token bucket refilled: {} -> {} tokens",
+                    old_tokens, self.tokens
+                );
+            }
         }
     }
 }
@@ -84,6 +100,7 @@ impl<'r> FromRequest<'r> for ClientIp {
     }
 }
 
+#[instrument(level = "trace", skip(rate_limiter), fields(client_ip = %client_ip.0))]
 pub fn check_rate_limit(
     rate_limiter: &State<RateLimiter>,
     client_ip: &ClientIp,
@@ -101,8 +118,13 @@ pub fn check_rate_limit(
         .or_insert_with(|| TokenBucket::new(capacity, refill_rate, refill_interval));
 
     if entry.try_consume() {
+        debug!("Rate limit check passed for {}", client_ip.0);
         Ok(())
     } else {
+        warn!(
+            "Rate limit exceeded for {} - rejecting request",
+            client_ip.0
+        );
         Err(Status::TooManyRequests)
     }
 }
