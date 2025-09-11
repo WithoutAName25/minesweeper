@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 
 use dashmap::Entry;
 use nanoid::nanoid;
@@ -14,7 +14,7 @@ use minesweeper_common::{
 
 use crate::{
     logic::{Game, Games},
-    rate_limit::{ClientIp, RateLimiter, check_rate_limit},
+    rate_limit::{RateLimiter, check_rate_limit},
 };
 
 #[instrument(level = "trace", skip(games, game))]
@@ -48,30 +48,27 @@ fn add_game(games: &State<Games>, game: Game) -> String {
 }
 
 #[post("/create", data = "<params>")]
-#[instrument(level = "trace", skip(games, rate_limiter), fields(client_ip = %client_ip.0, width = params.width, height = params.height, bombs = params.bombs))]
+#[instrument(level = "trace", skip(games, rate_limiter), fields(width = params.width, height = params.height, bombs = params.bombs))]
 pub fn create_game(
     params: Json<GameParams>,
     games: &State<Games>,
     rate_limiter: &State<RateLimiter>,
-    client_ip: ClientIp,
+    ip: IpAddr,
 ) -> Result<Json<CreateResponse>, Status> {
     info!(
         "Game creation request from {}: {}x{} with {} bombs",
-        client_ip.0, params.width, params.height, params.bombs
+        ip, params.width, params.height, params.bombs
     );
 
-    if let Err(status) = check_rate_limit(rate_limiter, &client_ip) {
-        warn!("Rate limit exceeded for client {}", client_ip.0);
+    if let Err(status) = check_rate_limit(rate_limiter, &ip) {
+        warn!("Rate limit exceeded for client {}", ip);
         return Err(status);
     }
 
     let game = Game::new(params.0);
     let id = add_game(games, game);
 
-    info!(
-        "Successfully created game {} for client {}",
-        id, client_ip.0
-    );
+    info!("Successfully created game {} for client {}", id, ip);
     Ok(Json(CreateResponse { id }))
 }
 

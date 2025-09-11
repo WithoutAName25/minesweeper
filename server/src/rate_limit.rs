@@ -5,11 +5,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use rocket::{
-    State,
-    http::Status,
-    request::{self, FromRequest, Request},
-};
+use rocket::{State, http::Status};
 use tracing::{debug, instrument, warn};
 
 #[derive(Debug)]
@@ -76,35 +72,8 @@ pub fn create_rate_limiter() -> RateLimiter {
     DashMap::new()
 }
 
-pub struct ClientIp(pub IpAddr);
-
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for ClientIp {
-    type Error = ();
-
-    async fn from_request(req: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
-        let ip = req
-            .headers()
-            .get_one("X-Forwarded-For")
-            .and_then(|header| header.split(',').next())
-            .and_then(|ip| ip.trim().parse().ok())
-            .or_else(|| {
-                req.headers()
-                    .get_one("X-Real-IP")
-                    .and_then(|ip| ip.parse().ok())
-            })
-            .or_else(|| req.client_ip())
-            .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
-
-        request::Outcome::Success(ClientIp(ip))
-    }
-}
-
-#[instrument(level = "trace", skip(rate_limiter), fields(client_ip = %client_ip.0))]
-pub fn check_rate_limit(
-    rate_limiter: &State<RateLimiter>,
-    client_ip: &ClientIp,
-) -> Result<(), Status> {
+#[instrument(level = "trace", skip(rate_limiter))]
+pub fn check_rate_limit(rate_limiter: &State<RateLimiter>, ip: &IpAddr) -> Result<(), Status> {
     let capacity: u32 = env::var("RATE_LIMIT_GAMES_PER_MINUTE")
         .unwrap_or_else(|_| "10".to_string())
         .parse()
@@ -114,17 +83,14 @@ pub fn check_rate_limit(
     let refill_rate = capacity; // Refill to full capacity every minute
 
     let mut entry = rate_limiter
-        .entry(client_ip.0)
+        .entry(*ip)
         .or_insert_with(|| TokenBucket::new(capacity, refill_rate, refill_interval));
 
     if entry.try_consume() {
-        debug!("Rate limit check passed for {}", client_ip.0);
+        debug!("Rate limit check passed for {}", ip);
         Ok(())
     } else {
-        warn!(
-            "Rate limit exceeded for {} - rejecting request",
-            client_ip.0
-        );
+        warn!("Rate limit exceeded for {} - rejecting request", ip);
         Err(Status::TooManyRequests)
     }
 }
