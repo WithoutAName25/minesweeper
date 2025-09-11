@@ -44,7 +44,7 @@ impl MinesweeperWebSocket {
                 };
 
                 debug!("Sending message: {}", json);
-                if let Err(e) = writer.send(Message::Text(json)).await {
+                if let Err(e) = writer.send(Message::Text(json.into())).await {
                     warn!("Failed to send WebSocket message: {}", e);
                     break;
                 }
