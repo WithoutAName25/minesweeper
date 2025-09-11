@@ -10,7 +10,9 @@ COPY server/Cargo.toml server/
 COPY client/Cargo.toml client/
 
 # Create dummy source files for dependency caching
+RUN mkdir -p common/src && echo "" > common/src/lib.rs
 RUN mkdir -p server/src && echo "fn main() {}" > server/src/main.rs
+RUN mkdir -p client/src && echo "" > client/src/lib.rs
 
 # Build dependencies (this will be cached)
 RUN cargo build --release --bin minesweeper-server
