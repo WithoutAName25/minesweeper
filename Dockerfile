@@ -24,7 +24,7 @@ COPY server/src server/src
 COPY client/src client/src
 
 # Build the server binary
-RUN touch server/src/main.rs && cargo build --release --bin minesweeper-server
+RUN touch common/src/lib.rs server/src/main.rs client/src/lib.rs && cargo build --release --bin minesweeper-server
 
 # Runtime stage
 FROM debian:bookworm-slim
