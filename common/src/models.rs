@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 #[serde(tag = "state")]
 pub enum Cell {
     #[serde(rename = "hidden")]
@@ -15,13 +15,13 @@ pub enum Cell {
     Bomb,
 }
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Pos {
     pub x: usize,
     pub y: usize,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 #[serde(default)]
 pub struct GameParams {
     pub width: usize,
@@ -39,7 +39,7 @@ impl Default for GameParams {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CreateResponse {
     pub id: String,
 }
