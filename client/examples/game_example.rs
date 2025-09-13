@@ -7,10 +7,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
 
     // Create a high-level game client
-    let mut game = MinesweeperGame::new("http://localhost:8000")?;
+    let game = MinesweeperGame::new("http://localhost:8000")?;
 
     // Subscribe to game events for background listening
-    let mut event_receiver = game.subscribe_to_events();
+    let mut event_receiver = game.subscribe_to_events().await;
 
     // Spawn background task to handle events
     let event_handler = tokio::spawn(async move {
@@ -56,7 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
 
     game.start_game(params).await?;
-    println!("Game started! Game ID: {}", game.get_game_id().unwrap());
+    println!(
+        "Game started! Game ID: {}",
+        game.get_game_id().await.unwrap()
+    );
 
     // Give time for initialization event
     sleep(Duration::from_millis(100)).await;

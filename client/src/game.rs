@@ -104,14 +104,40 @@ impl GameState {
     }
 }
 
+/// Connection state - all fields are required when connected
+struct ConnectionState {
+    websocket_sender: mpsc::UnboundedSender<ClientMessage>,
+    game_id: String,
+    background_task: JoinHandle<()>,
+}
+
+impl ConnectionState {
+    /// Send a message through the WebSocket connection
+    fn send_message(&self, message: ClientMessage) -> Result<()> {
+        self.websocket_sender
+            .send(message)
+            .map_err(|_| "WebSocket sender closed")?;
+        Ok(())
+    }
+
+    /// Get the game ID
+    fn get_game_id(&self) -> &String {
+        &self.game_id
+    }
+
+    /// Abort the background task and wait for it to finish
+    async fn abort_and_wait_background_task(self) {
+        self.background_task.abort();
+        let _ = self.background_task.await;
+    }
+}
+
 /// High-level minesweeper game client that manages game state locally
 pub struct MinesweeperGame {
     client: MinesweeperClient,
-    websocket_sender: Option<mpsc::UnboundedSender<ClientMessage>>,
-    game_id: Option<String>,
+    connection_state: Arc<RwLock<Option<ConnectionState>>>,
+    event_sender: Arc<RwLock<Option<mpsc::UnboundedSender<GameEvent>>>>,
     state: Arc<RwLock<Option<GameState>>>,
-    event_sender: Option<mpsc::UnboundedSender<GameEvent>>,
-    background_task: Option<JoinHandle<()>>,
 }
 
 impl MinesweeperGame {
@@ -120,30 +146,33 @@ impl MinesweeperGame {
         let client = MinesweeperClient::new(server_url)?;
         Ok(Self {
             client,
-            websocket_sender: None,
-            game_id: None,
+            connection_state: Arc::new(RwLock::new(None)),
+            event_sender: Arc::new(RwLock::new(None)),
             state: Arc::new(RwLock::new(None)),
-            event_sender: None,
-            background_task: None,
         })
     }
 
     /// Subscribe to game events. Returns a receiver for game events.
-    pub fn subscribe_to_events(&mut self) -> mpsc::UnboundedReceiver<GameEvent> {
+    pub async fn subscribe_to_events(&self) -> mpsc::UnboundedReceiver<GameEvent> {
         let (sender, receiver) = mpsc::unbounded_channel();
-        self.event_sender = Some(sender);
+        let mut event_sender = self.event_sender.write().await;
+        *event_sender = Some(sender);
         receiver
     }
 
     /// Start a new game with the specified parameters
-    pub async fn start_game(&mut self, params: GameParams) -> Result<()> {
+    pub async fn start_game(&self, params: GameParams) -> Result<()> {
         info!(
             "Starting new game: {}x{} with {} bombs",
             params.width, params.height, params.bombs
         );
 
+        let mut conn_state = self.connection_state.write().await;
+
         // Stop any existing background task
-        self.stop_background_listener().await;
+        if let Some(existing_conn) = conn_state.take() {
+            existing_conn.abort_and_wait_background_task().await;
+        }
 
         // Create the game via HTTP API
         let game_id = self.client.create_game(params).await?;
@@ -152,67 +181,61 @@ impl MinesweeperGame {
         // Connect to the game via WebSocket
         let ws_url = self.client.websocket_url(&game_id)?;
         let websocket = MinesweeperWebSocket::connect(&ws_url).await?;
-
-        self.game_id = Some(game_id);
-        self.websocket_sender = Some(websocket.get_sender());
+        let websocket_sender = websocket.get_sender();
 
         // Start background message listener
-        self.start_background_listener(websocket);
+        let background_task = self.start_background_listener(websocket);
+
+        // Create new connection state
+        *conn_state = Some(ConnectionState {
+            websocket_sender,
+            game_id,
+            background_task,
+        });
+
+        Ok(())
+    }
+
+    /// Send a message to the connected game
+    async fn send_client_message(&self, message: ClientMessage) -> Result<()> {
+        let conn_state = self.connection_state.read().await;
+
+        if let Some(ref conn) = *conn_state {
+            conn.send_message(message)?;
+        } else {
+            return Err("Not connected to a game. Call start_game() first.".into());
+        }
 
         Ok(())
     }
 
     /// Reveal a cell at the specified position
-    pub async fn reveal(&mut self, x: usize, y: usize) -> Result<()> {
-        self.ensure_connected()?;
-
+    pub async fn reveal(&self, x: usize, y: usize) -> Result<()> {
         let pos = Pos { x, y };
         debug!("Revealing cell at ({}, {})", x, y);
 
         let message = ClientMessage::Reveal { pos };
-        if let Some(ref sender) = self.websocket_sender {
-            sender
-                .send(message)
-                .map_err(|_| "WebSocket sender closed")?;
-        }
-
-        Ok(())
+        self.send_client_message(message).await
     }
 
     /// Flag/unflag a cell at the specified position
-    pub async fn flag(&mut self, x: usize, y: usize) -> Result<()> {
-        self.ensure_connected()?;
-
+    pub async fn flag(&self, x: usize, y: usize) -> Result<()> {
         let pos = Pos { x, y };
         debug!("Flagging cell at ({}, {})", x, y);
 
         let message = ClientMessage::Flag { pos };
-        if let Some(ref sender) = self.websocket_sender {
-            sender
-                .send(message)
-                .map_err(|_| "WebSocket sender closed")?;
-        }
-
-        Ok(())
+        self.send_client_message(message).await
     }
 
     /// Restart the game with new parameters
-    pub async fn restart(&mut self, params: GameParams) -> Result<()> {
-        self.ensure_connected()?;
-
+    pub async fn restart(&self, params: GameParams) -> Result<()> {
         info!(
             "Restarting game with new parameters: {}x{} with {} bombs",
             params.width, params.height, params.bombs
         );
 
         let message = ClientMessage::Restart { params };
-        if let Some(ref sender) = self.websocket_sender {
-            sender
-                .send(message)
-                .map_err(|_| "WebSocket sender closed")?;
-        }
-
-        Ok(())
+        self.send_client_message(message).await
     }
 
     /// Get the current game state
@@ -221,68 +244,64 @@ impl MinesweeperGame {
     }
 
     /// Get the game ID
-    pub fn get_game_id(&self) -> Option<&String> {
-        self.game_id.as_ref()
+    pub async fn get_game_id(&self) -> Option<String> {
+        let conn_state = self.connection_state.read().await;
+        conn_state.as_ref().map(|conn| conn.get_game_id().clone())
     }
 
     /// Check if we're connected to a game
-    pub fn is_connected(&self) -> bool {
-        self.websocket_sender.is_some() && self.game_id.is_some()
+    pub async fn is_connected(&self) -> bool {
+        let conn_state = self.connection_state.read().await;
+        conn_state.is_some()
     }
 
     /// Close the connection and clean up
-    pub async fn disconnect(&mut self) -> Result<()> {
-        self.stop_background_listener().await;
+    pub async fn disconnect(&self) -> Result<()> {
+        let mut conn_state = self.connection_state.write().await;
 
-        // Drop the sender to close the WebSocket
-        self.websocket_sender = None;
+        if let Some(conn) = conn_state.take() {
+            conn.abort_and_wait_background_task().await;
+        }
 
-        self.game_id = None;
+        // Clear event sender
+        *self.event_sender.write().await = None;
+
+        // Clear game state
         *self.state.write().await = None;
-        self.event_sender = None;
 
         info!("Disconnected from game");
         Ok(())
     }
 
     /// Start background WebSocket message listener
-    fn start_background_listener(&mut self, mut websocket: MinesweeperWebSocket) {
+    fn start_background_listener(&self, mut websocket: MinesweeperWebSocket) -> JoinHandle<()> {
         let state = self.state.clone();
         let event_sender = self.event_sender.clone();
 
-        let handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             Self::background_message_handler(&mut websocket, state, event_sender).await;
-        });
-        self.background_task = Some(handle);
-    }
-
-    /// Stop background WebSocket message listener
-    async fn stop_background_listener(&mut self) {
-        if let Some(handle) = self.background_task.take() {
-            handle.abort();
-            let _ = handle.await;
-        }
+        })
     }
 
     /// Background task that handles incoming WebSocket messages
     async fn background_message_handler(
         websocket: &mut MinesweeperWebSocket,
         state: Arc<RwLock<Option<GameState>>>,
-        event_sender: Option<mpsc::UnboundedSender<GameEvent>>,
+        event_sender: Arc<RwLock<Option<mpsc::UnboundedSender<GameEvent>>>>,
     ) {
         loop {
             let message = match websocket.receive_message().await {
                 Ok(Some(msg)) => msg,
                 Ok(None) => {
                     // Connection closed
-                    if let Some(ref sender) = event_sender {
+                    if let Some(ref sender) = *event_sender.read().await {
                         let _ = sender.send(GameEvent::ConnectionLost);
                     }
                     break;
                 }
                 Err(e) => {
                     warn!("Error receiving WebSocket message: {}", e);
-                    if let Some(ref sender) = event_sender {
+                    if let Some(ref sender) = *event_sender.read().await {
                         let _ = sender.send(GameEvent::ConnectionLost);
                     }
                     break;
@@ -304,7 +323,7 @@ impl MinesweeperGame {
                     let new_state = GameState::new(width, height, bombs, field);
                     *state.write().await = Some(new_state);
 
-                    if let Some(ref sender) = event_sender {
+                    if let Some(ref sender) = *event_sender.read().await {
                         let _ = sender.send(GameEvent::GameInitialized {
                             width,
                             height,
@@ -345,7 +364,7 @@ impl MinesweeperGame {
                         }
                     }
 
-                    if let Some(ref sender) = event_sender {
+                    if let Some(ref sender) = *event_sender.read().await {
                         if !changed_positions.is_empty() {
                             let _ = sender.send(GameEvent::BoardUpdated { changed_positions });
                         }
@@ -357,13 +376,5 @@ impl MinesweeperGame {
                 }
             }
         }
-    }
-
-    /// Ensure we're connected to a game
-    fn ensure_connected(&self) -> Result<()> {
-        if !self.is_connected() {
-            return Err("Not connected to a game. Call start_game() first.".into());
-        }
-        Ok(())
     }
 }
