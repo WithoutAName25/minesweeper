@@ -210,18 +210,16 @@ impl MinesweeperGame {
     }
 
     /// Reveal a cell at the specified position
-    pub async fn reveal(&self, x: usize, y: usize) -> Result<()> {
-        let pos = Pos { x, y };
-        debug!("Revealing cell at ({}, {})", x, y);
+    pub async fn reveal(&self, pos: Pos) -> Result<()> {
+        debug!("Revealing cell at ({}, {})", pos.x, pos.y);
 
         let message = ClientMessage::Reveal { pos };
         self.send_client_message(message).await
     }
 
     /// Flag/unflag a cell at the specified position
-    pub async fn flag(&self, x: usize, y: usize) -> Result<()> {
-        let pos = Pos { x, y };
-        debug!("Flagging cell at ({}, {})", x, y);
+    pub async fn flag(&self, pos: Pos) -> Result<()> {
+        debug!("Flagging cell at ({}, {})", pos.x, pos.y);
 
         let message = ClientMessage::Flag { pos };
         self.send_client_message(message).await

@@ -11,19 +11,19 @@
 //! locally and provides convenient methods for game actions:
 //!
 //! ```rust,no_run
-//! use minesweeper_client::{MinesweeperGame, GameParams};
+//! use minesweeper_client::{MinesweeperGame, GameParams, Pos};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-//!     let mut game = MinesweeperGame::new("http://localhost:8000")?;
-//!     
+//!     let game = MinesweeperGame::new("http://localhost:8000")?;
+//!
 //!     // Start a new game
 //!     let params = GameParams { width: 8, height: 8, bombs: 10 };
 //!     game.start_game(params).await?;
-//!     
+//!
 //!     // Make moves
-//!     game.reveal(0, 0).await?;
-//!     game.flag(1, 1).await?;
+//!     game.reveal(Pos { x: 0, y: 0 }).await?;
+//!     game.flag(Pos { x: 1, y: 1 }).await?;
 //!     
 //!     // Check game state
 //!     if let Some(state) = game.get_state().await {

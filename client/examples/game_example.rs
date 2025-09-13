@@ -1,4 +1,5 @@
 use minesweeper_client::{GameEvent, GameParams, MinesweeperGame};
+use minesweeper_common::models::Pos;
 use tokio::time::{Duration, sleep};
 
 #[tokio::main]
@@ -81,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Reveal the corner cell (0, 0)
     println!("Revealing cell (0, 0)...");
-    game.reveal(0, 0).await?;
+    game.reveal(Pos { x: 0, y: 0 }).await?;
     sleep(Duration::from_millis(100)).await;
 
     if let Some(state) = game.get_state().await {
@@ -93,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Try to flag a cell (1, 1)
     println!("\nFlagging cell (1, 1)...");
-    game.flag(1, 1).await?;
+    game.flag(Pos { x: 1, y: 1 }).await?;
     sleep(Duration::from_millis(100)).await;
 
     if let Some(state) = game.get_state().await {
@@ -102,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Try to reveal another cell (2, 2)
     println!("\nRevealing cell (2, 2)...");
-    game.reveal(2, 2).await?;
+    game.reveal(Pos { x: 2, y: 2 }).await?;
     sleep(Duration::from_millis(100)).await;
 
     if let Some(state) = game.get_state().await {
@@ -114,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Flag the same cell again (should unflag it)
     println!("\nUnflagging cell (1, 1)...");
-    game.flag(1, 1).await?;
+    game.flag(Pos { x: 1, y: 1 }).await?;
     sleep(Duration::from_millis(100)).await;
 
     if let Some(state) = game.get_state().await {
