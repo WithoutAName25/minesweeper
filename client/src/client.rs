@@ -38,7 +38,10 @@ impl MinesweeperClient {
     pub fn websocket_url(&self, game_id: &str) -> Result<String> {
         let mut ws_url = self.base_url.clone();
         ws_url
-            .set_scheme("ws")
+            .set_scheme(match self.base_url.scheme() {
+                "https" => "wss",
+                _ => "ws",
+            })
             .map_err(|_| "Failed to set WebSocket scheme")?;
         ws_url.set_path("/ws");
         ws_url.set_query(Some(&format!("id={}", game_id)));
