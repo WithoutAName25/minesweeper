@@ -9,7 +9,7 @@ use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::{MinesweeperClient, MinesweeperWebSocket, Result, game};
+use crate::{MinesweeperClient, MinesweeperWebSocket, Result};
 
 /// Events emitted by the minesweeper game
 #[derive(Debug, Clone)]
@@ -183,6 +183,7 @@ impl MinesweeperGame {
         if let Some(existing_conn) = conn_state.take() {
             existing_conn.abort_and_wait_background_task().await;
         }
+        self.state.write().await.take();
 
         // Connect to the game via WebSocket
         let ws_url = self.client.websocket_url(&game_id)?;
