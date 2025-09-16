@@ -7,7 +7,7 @@ description = "Rust client library for the minesweeper multiplayer server"
 [dependencies]
 minesweeper-common = { path = "../common" }
 futures-util = "0.3"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["charset", "http2", "json", "rustls-tls"], default-features = false }
 serde = { workspace = true }
 serde_json = "1.0.142"
 tokio = { workspace = true }
