@@ -9,7 +9,7 @@ minesweeper-common = { path = "../common" }
 futures-util = "0.3"
 reqwest = { version = "0.12", features = ["json"] }
 serde = { workspace = true }
-serde_json = "1.0.142"
+serde_json = "1.0.145"
 tokio = { workspace = true }
 tokio-tungstenite = { version = "0.27", features = ["native-tls"] }
 tracing = { workspace = true }
