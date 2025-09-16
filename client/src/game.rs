@@ -9,7 +9,7 @@ use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::{MinesweeperClient, MinesweeperWebSocket, Result};
+use crate::{MinesweeperClient, MinesweeperWebSocket, Result, game};
 
 /// Events emitted by the minesweeper game
 #[derive(Debug, Clone)]
@@ -167,6 +167,16 @@ impl MinesweeperGame {
             params.width, params.height, params.bombs
         );
 
+        // Create the game via HTTP API
+        let game_id = self.client.create_game(params).await?;
+        info!("Created game with ID: {}", game_id);
+
+        self.join_game(game_id).await
+    }
+
+    pub async fn join_game(&self, game_id: String) -> Result<()> {
+        info!("Joining game with ID: {}", game_id);
+
         let mut conn_state = self.connection_state.write().await;
 
         // Stop any existing background task
@@ -174,14 +184,12 @@ impl MinesweeperGame {
             existing_conn.abort_and_wait_background_task().await;
         }
 
-        // Create the game via HTTP API
-        let game_id = self.client.create_game(params).await?;
-        info!("Created game with ID: {}", game_id);
-
         // Connect to the game via WebSocket
         let ws_url = self.client.websocket_url(&game_id)?;
         let websocket = MinesweeperWebSocket::connect(&ws_url).await?;
         let websocket_sender = websocket.get_sender();
+
+        info!("Connected to game with ID: {}", game_id);
 
         // Start background message listener
         let background_task = self.start_background_listener(websocket);
