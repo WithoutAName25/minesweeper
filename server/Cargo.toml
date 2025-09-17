@@ -3,6 +3,11 @@ name = "minesweeper-server"
 version = "1.0.0"
 edition = "2024"
 description = "Minesweeper multiplayer server"
+license = "MIT"
+repository = "https://github.com/WithoutAName25/minesweeper"
+homepage = "https://github.com/WithoutAName25/minesweeper"
+keywords = ["minesweeper", "game", "server", "multiplayer"]
+categories = ["games", "network-programming", "web-programming"]
 
 [[bin]]
 name = "minesweeper-server"

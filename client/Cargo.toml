@@ -3,6 +3,11 @@ name = "minesweeper-client"
 version = "1.0.0"
 edition = "2024"
 description = "Rust client library for the minesweeper multiplayer server"
+license = "MIT"
+repository = "https://github.com/WithoutAName25/minesweeper"
+homepage = "https://github.com/WithoutAName25/minesweeper"
+keywords = ["minesweeper", "game", "client", "websocket"]
+categories = ["games", "network-programming", "api-bindings"]
 
 [dependencies]
 minesweeper-common = { path = "../common" }

@@ -3,6 +3,11 @@ name = "minesweeper-common"
 version = "1.0.0"
 edition = "2024"
 description = "Shared types and protocol definitions for minesweeper client/server"
+license = "MIT"
+repository = "https://github.com/WithoutAName25/minesweeper"
+homepage = "https://github.com/WithoutAName25/minesweeper"
+keywords = ["minesweeper", "game", "protocol"]
+categories = ["games", "network-programming"]
 
 [dependencies]
 serde = { workspace = true }
