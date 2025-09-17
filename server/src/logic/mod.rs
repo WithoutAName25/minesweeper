@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{cmp::min, collections::HashMap, sync::Arc, time::Instant};
 
 use dashmap::DashMap;
 use rand::Rng;
@@ -21,6 +21,10 @@ pub struct Game {
     field: Field,
     streams: HashMap<Uuid, SplitSink<DuplexStream, Message>>,
     last_activity: Instant,
+}
+
+fn validate_params(params: &mut GameParams) {
+    params.bombs = min(params.bombs, params.width * params.height)
 }
 
 fn generate_bombs(params: &GameParams) -> Vec<bool> {
@@ -113,7 +117,8 @@ async fn broadcast(
 }
 
 impl Field {
-    fn new(params: GameParams) -> Self {
+    fn new(mut params: GameParams) -> Self {
+        validate_params(&mut params);
         Self {
             width: params.width,
             height: params.height,
