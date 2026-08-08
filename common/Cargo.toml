@@ -10,4 +10,5 @@ keywords = ["minesweeper", "game", "protocol"]
 categories = ["games", "network-programming"]
 
 [dependencies]
-serde = { workspace = true }
+serde.workspace = true
+thiserror.workspace = true

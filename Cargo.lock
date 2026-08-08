@@ -938,7 +938,7 @@ name = "minesweeper-client"
 version = "1.0.0"
 dependencies = [
  "futures-util",
- "minesweeper-common 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "minesweeper-common",
  "reqwest",
  "serde",
  "serde_json",
@@ -956,15 +956,7 @@ name = "minesweeper-common"
 version = "1.0.0"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "minesweeper-common"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f7f04b0ea14e8daae7ddfd7f954f752225161620332a5ae3de596ddee73032f"
-dependencies = [
- "serde",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -972,7 +964,7 @@ name = "minesweeper-server"
 version = "1.0.0"
 dependencies = [
  "dashmap",
- "minesweeper-common 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "minesweeper-common",
  "nanoid",
  "rand 0.9.5",
  "rocket",
