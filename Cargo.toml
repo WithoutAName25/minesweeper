@@ -18,7 +18,7 @@ minesweeper-common = { path = "common", version = "1.0.0" }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
 tokio = { version = "1.47.1", features = ["full"] }
-tokio-tungstenite = { version = "0.27", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 tokio-test = "0.4"
 uuid = { version = "1.18.1", features = ["serde", "v4"] }
 tracing = "0.1.41"
