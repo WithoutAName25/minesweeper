@@ -1010,7 +1010,7 @@ dependencies = [
  "dashmap",
  "minesweeper-common",
  "nanoid",
- "rand 0.9.5",
+ "rand 0.10.2",
  "rocket",
  "rocket_cors",
  "rocket_ws",
