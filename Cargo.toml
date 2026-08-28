@@ -28,7 +28,7 @@ reqwest = { version = "0.12", features = ["charset", "http2", "json", "rustls-tl
 url = "2.5"
 dashmap = "6.1.0"
 nanoid = "0.5.0"
-rand = "0.9.2"
+rand = "0.10.2"
 rocket = { version = "0.5.1", features = ["json"] }
 rocket_cors = "0.6.0"
 rocket_ws = "0.1.1"
